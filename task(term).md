@@ -1,0 +1,2 @@
+- thiết kế db
+- tách hardcode content ra (dùng cms hoặc api)
