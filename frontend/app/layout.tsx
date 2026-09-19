@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
+import AgentationClient from "@/components/Agentation";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,10 +32,17 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100">
+      <body className="min-h-full flex flex-col transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100 font-sans">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
-        </ThemeProvider>
+          <Navbar />
+          <div className="flex-1">
+            {children}
+            {process.env.NODE_ENV === 'development' && (
+              <AgentationClient />
+            )}
+          </div>
+          <Footer />
+        </ThemeProvider> 
       </body>
     </html>
   );
