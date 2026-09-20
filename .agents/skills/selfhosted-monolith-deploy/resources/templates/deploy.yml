@@ -1,0 +1,47 @@
+name: Deploy Production (Self-Hosted Runner)
+
+on:
+  push:
+    branches:
+      - main # Customize target deployment branch(es)
+
+# Prevent concurrent deployments from conflicting
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy Monolith Application
+        run: |
+          set -e
+
+          # Navigate to the project directory on the host VPS
+          # Set PROJECT_DIR to your cloned repository path (e.g. ~/apps/<your-project-name>)
+          PROJECT_DIR="${HOME}/apps/${GITHUB_REPOSITORY#*/}"
+          if [ ! -d "$PROJECT_DIR" ]; then
+            # Fallback if custom path is used
+            PROJECT_DIR="${HOME}/self_host/${GITHUB_REPOSITORY#*/}"
+          fi
+
+          cd "$PROJECT_DIR"
+
+          echo "🚀 Pulling latest changes from branch: ${{ github.ref_name }}..."
+          git pull origin "${{ github.ref_name }}"
+
+          # Optional: Run migrations if a migration service is defined in compose
+          if docker compose -f docker-compose.prod.yml config --services | grep -q "^migration$"; then
+            echo "📦 Running database migrations..."
+            docker compose -f docker-compose.prod.yml --profile tools run --rm migration
+          fi
+
+          echo "🔄 Rebuilding and restarting containers..."
+          docker compose -f docker-compose.prod.yml up -d --build
+
+          echo "🧹 Cleaning up dangling images..."
+          docker image prune -f
+
+          echo "✅ Deployment finished successfully!"

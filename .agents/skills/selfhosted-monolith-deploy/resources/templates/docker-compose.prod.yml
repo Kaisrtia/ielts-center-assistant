@@ -1,0 +1,165 @@
+# =============================================================================
+# Universal Production Docker Compose Template for Monolith Applications
+# =============================================================================
+# This template is completely agnostic to languages, frameworks, and folder structures.
+# Adapt the services below based on whether your monolith is:
+#   A) Unified Monolith (single codebase/container serving both UI & API, e.g. Next.js, Django, Rails, Laravel, Go)
+#   B) Separated Monolith (frontend and backend in subfolders within the same repo)
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Reverse Proxy & SSL Termination (Caddy)
+  # Automatically provisions and renews SSL via Let's Encrypt / ZeroSSL
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-app}-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"     # Required for HTTP-01 ACME challenge & HTTP->HTTPS redirect
+      - "443:443"   # HTTPS traffic
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # Persist SSL certificates
+      - caddy_config:/config  # Persist Caddy runtime config
+    depends_on:
+      - app # Or frontend/backend depending on architecture
+    networks:
+      - internal-net
+
+  # ---------------------------------------------------------------------------
+  # OPTION A: Unified Monolith Application (Single Service)
+  # (Uncomment if your app runs as a single service serving both web & API)
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-app}-web
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE_PATH:-.env}
+    environment:
+      APP_ENV: production
+      PORT: ${APP_PORT:-3000}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal-net
+
+  # ---------------------------------------------------------------------------
+  # OPTION B: Separated Monolith (Decoupled Frontend & Backend in same repo)
+  # (Uncomment this section and remove 'app' above if frontend/backend are split)
+  # ---------------------------------------------------------------------------
+  # frontend:
+  #   build:
+  #     context: <PATH_TO_FRONTEND> # e.g. ./frontend, ./web, ./client
+  #     dockerfile: Dockerfile
+  #   container_name: ${COMPOSE_PROJECT_NAME:-app}-frontend
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ${FRONTEND_ENV_FILE:-.env}
+  #   networks:
+  #     - internal-net
+  #
+  # backend:
+  #   build:
+  #     context: <PATH_TO_BACKEND> # e.g. ./backend, ./api, ./server
+  #     dockerfile: Dockerfile
+  #   container_name: ${COMPOSE_PROJECT_NAME:-app}-backend
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ${BACKEND_ENV_FILE:-.env}
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   networks:
+  #     - internal-net
+
+  # ---------------------------------------------------------------------------
+  # Database Service (PostgreSQL / MySQL / MariaDB / etc.)
+  # ---------------------------------------------------------------------------
+  db:
+    image: ${DB_IMAGE:-postgres:16-alpine}
+    container_name: ${COMPOSE_PROJECT_NAME:-app}-db
+    restart: unless-stopped
+    environment:
+      # Adapt keys depending on database type (Postgres vs MySQL/MariaDB)
+      POSTGRES_USER: ${DB_USER:-db_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-app_db}
+    volumes:
+      - db_data:/var/lib/postgresql/data # Use /var/lib/mysql for MySQL
+    healthcheck:
+      # Postgres: pg_isready -U ${DB_USER:-db_user} -d ${DB_NAME:-app_db}
+      # MySQL: mysqladmin ping -h localhost -u${DB_USER:-db_user} -p${DB_PASSWORD}
+      test: ["CMD-SHELL", "${DB_HEALTHCHECK_CMD:-pg_isready -U postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal-net
+
+  # ---------------------------------------------------------------------------
+  # Cache / Queue / Session Store (Optional: Redis / KeyDB / Valkey)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-app}-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy noeviction
+      --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - internal-net
+
+  # ---------------------------------------------------------------------------
+  # Isolated Migration / Initialization Runner (Optional)
+  # Uses Compose 'tools' profile: only runs when explicitly invoked:
+  #   docker compose -f docker-compose.prod.yml --profile tools run --rm migration
+  # ---------------------------------------------------------------------------
+  migration:
+    build:
+      context: ${MIGRATION_CONTEXT:-.}
+      dockerfile: Dockerfile
+    profiles:
+      - tools
+    env_file:
+      - ${ENV_FILE_PATH:-.env}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Replace with the project's specific migration command
+    # Examples:
+    #   - Django:   ["python", "manage.py", "migrate"]
+    #   - Rails:    ["bundle", "exec", "rails", "db:migrate"]
+    #   - Laravel:  ["php", "artisan", "migrate", "--force"]
+    #   - Prisma:   ["npx", "prisma", "migrate", "deploy"]
+    #   - TypeORM:  ["npm", "run", "typeorm:migration:run"]
+    #   - Alembic:  ["alembic", "upgrade", "head"]
+    #   - Go:       ["/app/migrate", "up"]
+    command: ${MIGRATION_COMMAND:-["echo", "No migration command specified"]}
+    networks:
+      - internal-net
+
+networks:
+  internal-net:
+    driver: bridge
+
+volumes:
+  db_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
