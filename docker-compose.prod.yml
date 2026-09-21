@@ -1,0 +1,99 @@
+# =============================================================================
+# Production Docker Compose - IELTS Center Assistant (Frontend Phase)
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Frontend Application (Next.js Standalone)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-ielts-center}-frontend
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE_PATH:-.env}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    networks:
+      - default
+      - web_gateway
+
+  # ---------------------------------------------------------------------------
+  # [PHASE 2 - BACKEND INTEGRATION]
+  # Uncomment the services below when ready to deploy the NestJS backend & database:
+  # ---------------------------------------------------------------------------
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: ${COMPOSE_PROJECT_NAME:-ielts-center}-backend
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ${ENV_FILE_PATH:-.env}
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   networks:
+  #     - internal-net
+  #
+  # db:
+  #   image: postgres:16-alpine
+  #   container_name: ${COMPOSE_PROJECT_NAME:-ielts-center}-db
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: ${DB_USER:-app_user}
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  #     POSTGRES_DB: ${DB_NAME:-ielts_db}
+  #   volumes:
+  #     - db_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-app_user} -d ${DB_NAME:-ielts_db}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - internal-net
+  #
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: ${COMPOSE_PROJECT_NAME:-ielts-center}-redis
+  #   restart: unless-stopped
+  #   command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+  #   volumes:
+  #     - redis_data:/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #   networks:
+  #     - internal-net
+  #
+  # migration:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   profiles:
+  #     - tools
+  #   env_file:
+  #     - ${ENV_FILE_PATH:-.env}
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   command: ["npm", "run", "migration:run"]
+  #   networks:
+  #     - internal-net
+
+networks:
+  default:
+  web_gateway:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  # db_data:
+  # redis_data:

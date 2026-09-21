@@ -1,0 +1,47 @@
+name: Deploy Develop (Self-Hosted Runner)
+
+on:
+  push:
+    branches:
+      - develop
+
+# Prevent concurrent deployments from conflicting
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy Monolith Application
+        run: |
+          set -e
+
+          # Navigate to the project directory on the host VPS
+          PROJECT_DIR="${HOME}/self_host/${GITHUB_REPOSITORY#*/}"
+
+          if [ ! -d "$PROJECT_DIR" ]; then
+            echo "❌ Error: Project directory not found at ${HOME}/self_host/${GITHUB_REPOSITORY#*/}"
+            exit 1
+          fi
+
+          cd "$PROJECT_DIR"
+
+          echo "🚀 Pulling latest changes from branch: ${{ github.ref_name }}..."
+          git pull origin "${{ github.ref_name }}"
+
+          # Run migrations if migration service is configured
+          if docker compose -f docker-compose.prod.yml config --services | grep -q "^migration$"; then
+            echo "📦 Running database migrations..."
+            docker compose -f docker-compose.prod.yml --profile tools run --rm migration
+          fi
+
+          echo "🔄 Rebuilding and restarting containers..."
+          docker compose -f docker-compose.prod.yml up -d --build
+
+          echo "🧹 Cleaning up dangling images..."
+          docker image prune -f
+
+          echo "✅ Deployment finished successfully!"
